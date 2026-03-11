@@ -172,11 +172,15 @@
 
     <!-- Toolbar -->
     <div id="toolbar" class="overlay">
-      <button id="videoPreviewBtn" class="btn">Apply Preview</button>
+      <!-- Button 1: Example Video (Projektvideos) -->
+      <button id="exampleVideoBtn" class="btn">Example Video</button>
+
+      <!-- Button 2: Specs Preview -->
       <button id="specsPreviewBtn" class="btn secondary" disabled>
         Specs Preview
       </button>
 
+      <!-- Upload-Slots -->
       <div class="file-input-wrapper">
         <span class="file-label">Inner Screen Video</span>
         <input
@@ -206,6 +210,11 @@
           title="Floor Video"
         />
       </div>
+
+      <!-- Button 3: Apply Preview (User-Uploads) -->
+      <button id="applyPreviewBtn" class="btn secondary">
+        Apply Preview
+      </button>
     </div>
 
     <!-- Info-Panel -->
@@ -228,8 +237,9 @@
 
       const loadingOverlay = document.getElementById("loadingOverlay");
       const loadingText = document.getElementById("loadingText");
-      const videoPreviewBtn = document.getElementById("videoPreviewBtn");
+      const exampleVideoBtn = document.getElementById("exampleVideoBtn");
       const specsPreviewBtn = document.getElementById("specsPreviewBtn");
+      const applyPreviewBtn = document.getElementById("applyPreviewBtn");
       const innerVideoInput = document.getElementById("innerVideoInput");
       const outerVideoInput = document.getElementById("outerVideoInput");
       const floorVideoInput = document.getElementById("floorVideoInput");
@@ -514,7 +524,7 @@
                 name.includes("floor") ||
                 meshName.includes("floor") ||
                 name.includes("ground") ||
-                name.includes("ground")
+                meshName.includes("ground")
               ) {
                 floorMaterials.push(mat);
               }
@@ -546,21 +556,41 @@
       }
 
       function setupUIEvents() {
-        videoPreviewBtn.addEventListener("click", async () => {
-          videoPreviewBtn.disabled = true;
+        // Button 1: Projekt-Example-Videos verwenden
+        exampleVideoBtn.addEventListener("click", async () => {
+          exampleVideoBtn.disabled = true;
           specsPreviewBtn.disabled = true;
+          applyPreviewBtn.disabled = true;
           try {
-            await switchToVideos();
+            await switchToProjectVideos();
             specsPreviewBtn.disabled = false;
           } catch (e) {
             console.error(e);
-            videoPreviewBtn.disabled = false;
-            specsPreviewBtn.disabled = true;
+            exampleVideoBtn.disabled = false;
+          } finally {
+            loadingOverlay.style.display = "none";
           }
         });
 
+        // Button 2: zurück zu Specs (Bildtexturen)
         specsPreviewBtn.addEventListener("click", () => {
           switchBackToSpecs();
+        });
+
+        // Button 3: User-Uploads anwenden
+        applyPreviewBtn.addEventListener("click", async () => {
+          applyPreviewBtn.disabled = true;
+          specsPreviewBtn.disabled = true;
+          exampleVideoBtn.disabled = true;
+          try {
+            await switchToUserVideos();
+            specsPreviewBtn.disabled = false;
+          } catch (e) {
+            console.error(e);
+            applyPreviewBtn.disabled = false;
+          } finally {
+            loadingOverlay.style.display = "none";
+          }
         });
 
         innerVideoInput.addEventListener("change", () => {
@@ -602,23 +632,83 @@
 
         userVideos[slot] = { video, texture, url, isUser: true };
 
-        // Input reset, damit derselbe File erneut ausgewählt werden kann. [web:50]
         input.value = "";
       }
 
-      async function switchToVideos() {
+      async function switchToProjectVideos() {
         if (!model) return;
 
         stopSyncMonitor();
         stopAndDisposeVideos();
 
         loadingOverlay.style.display = "block";
-        loadingText.textContent = "Bereite Videos vor ...";
+        loadingText.textContent = "Bereite Example-Videos vor ...";
 
         const pendingEntries = [];
 
-        const addEntry = (mat, video, videoTexture, isUser = false) => {
-          pendingEntries.push({ mat, video, videoTexture, isUser });
+        const addEntry = (mat, video, videoTexture) => {
+          pendingEntries.push({ mat, video, videoTexture, isUser: false });
+        };
+
+        model.traverse((child) => {
+          if (!child.isMesh || !child.material) return;
+          const mats = Array.isArray(child.material)
+            ? child.material
+            : [child.material];
+          for (const mat of mats) {
+            const baseMap = originalMaps.get(mat);
+            if (!baseMap || !baseMap.image || !baseMap.image.src) continue;
+
+            const src = baseMap.image.src;
+            const fileName = src.split("/").pop();
+            if (!fileName) continue;
+            const baseName = fileName.replace(/\.[^/.]+$/, "");
+            const videoUrl = `models/${baseName}.mp4`;
+
+            const video = document.createElement("video");
+            video.loop = true;
+            video.muted = true;
+            video.playsInline = true;
+            video.preload = "auto";
+            video.src = videoUrl;
+
+            const texture = new THREE.VideoTexture(video);
+            texture.colorSpace = THREE.SRGBColorSpace;
+            texture.minFilter = THREE.LinearFilter;
+            texture.magFilter = THREE.LinearFilter;
+            texture.generateMipmaps = false;
+
+            addEntry(mat, video, texture);
+          }
+        });
+
+        if (pendingEntries.length === 0) {
+          loadingOverlay.style.display = "none";
+          exampleVideoBtn.disabled = false;
+          specsPreviewBtn.disabled = true;
+          applyPreviewBtn.disabled = false;
+          return;
+        }
+
+        await activateVideoEntries(pendingEntries);
+
+        specsPreviewBtn.disabled = false;
+        exampleVideoBtn.disabled = true;
+        applyPreviewBtn.disabled = false;
+      }
+
+      async function switchToUserVideos() {
+        if (!model) return;
+
+        stopSyncMonitor();
+        stopAndDisposeVideos();
+
+        loadingOverlay.style.display = "block";
+        loadingText.textContent = "Bereite User-Videos vor ...";
+
+        const pendingEntries = [];
+        const addEntry = (mat, video, videoTexture) => {
+          pendingEntries.push({ mat, video, videoTexture, isUser: true });
         };
 
         const hasUserVideos =
@@ -626,65 +716,46 @@
           !!userVideos.outer.video ||
           !!userVideos.floor.video;
 
-        if (hasUserVideos) {
-          if (userVideos.inner.video) {
-            for (const mat of innerMaterials) {
-              addEntry(mat, userVideos.inner.video, userVideos.inner.texture, true);
-            }
-          }
-          if (userVideos.outer.video) {
-            for (const mat of outerMaterials) {
-              addEntry(mat, userVideos.outer.video, userVideos.outer.texture, true);
-            }
-          }
-          if (userVideos.floor.video) {
-            for (const mat of floorMaterials) {
-              addEntry(mat, userVideos.floor.video, userVideos.floor.texture, true);
-            }
-          }
+        if (!hasUserVideos) {
+          loadingOverlay.style.display = "none";
+          applyPreviewBtn.disabled = false;
+          specsPreviewBtn.disabled = isUsingVideos ? false : true;
+          exampleVideoBtn.disabled = false;
+          return;
         }
 
-        if (!hasUserVideos) {
-          model.traverse((child) => {
-            if (!child.isMesh || !child.material) return;
-            const mats = Array.isArray(child.material)
-              ? child.material
-              : [child.material];
-            for (const mat of mats) {
-              const baseMap = originalMaps.get(mat);
-              if (!baseMap || !baseMap.image || !baseMap.image.src) continue;
-
-              const src = baseMap.image.src;
-              const fileName = src.split("/").pop();
-              if (!fileName) continue;
-              const baseName = fileName.replace(/\.[^/.]+$/, "");
-              const videoUrl = `models/${baseName}.mp4`;
-
-              const video = document.createElement("video");
-              video.loop = true;
-              video.muted = true;
-              video.playsInline = true;
-              video.preload = "auto";
-              video.src = videoUrl;
-
-              const texture = new THREE.VideoTexture(video);
-              texture.colorSpace = THREE.SRGBColorSpace;
-              texture.minFilter = THREE.LinearFilter;
-              texture.magFilter = THREE.LinearFilter;
-              texture.generateMipmaps = false;
-
-              addEntry(mat, video, texture, false);
-            }
-          });
+        if (userVideos.inner.video) {
+          for (const mat of innerMaterials) {
+            addEntry(mat, userVideos.inner.video, userVideos.inner.texture);
+          }
+        }
+        if (userVideos.outer.video) {
+          for (const mat of outerMaterials) {
+            addEntry(mat, userVideos.outer.video, userVideos.outer.texture);
+          }
+        }
+        if (userVideos.floor.video) {
+          for (const mat of floorMaterials) {
+            addEntry(mat, userVideos.floor.video, userVideos.floor.texture);
+          }
         }
 
         if (pendingEntries.length === 0) {
           loadingOverlay.style.display = "none";
-          videoPreviewBtn.disabled = false;
-          specsPreviewBtn.disabled = true;
+          applyPreviewBtn.disabled = false;
+          specsPreviewBtn.disabled = isUsingVideos ? false : true;
+          exampleVideoBtn.disabled = false;
           return;
         }
 
+        await activateVideoEntries(pendingEntries);
+
+        specsPreviewBtn.disabled = false;
+        exampleVideoBtn.disabled = false;
+        applyPreviewBtn.disabled = true;
+      }
+
+      async function activateVideoEntries(pendingEntries) {
         const videoMap = new Map();
         for (const entry of pendingEntries) {
           if (!videoMap.has(entry.video)) {
@@ -729,11 +800,10 @@
 
         startSyncMonitor();
 
-        specsPreviewBtn.disabled = false;
-        videoPreviewBtn.disabled = true;
         loadingOverlay.style.display = "none";
       }
 
+      // minimale Wartezeit, User-Videos aus Cache praktisch sofort
       function waitForVideoReady(video, isUserVideo = false) {
         return new Promise((resolve) => {
           if (video.readyState >= 2) {
@@ -836,24 +906,6 @@
           }
         }
 
-        for (const key of Object.keys(userVideos)) {
-          const slot = userVideos[key];
-          if (slot.video) {
-            try {
-              slot.video.pause();
-              slot.video.removeAttribute("src");
-              slot.video.load();
-            } catch (e) {}
-          }
-          if (slot.texture) {
-            slot.texture.dispose();
-          }
-          if (slot.url) {
-            URL.revokeObjectURL(slot.url);
-          }
-          userVideos[key] = { video: null, texture: null, url: null, isUser: true };
-        }
-
         activeVideoEntries = [];
         isUsingVideos = false;
       }
@@ -882,7 +934,8 @@
         stopAndDisposeVideos();
         restoreOriginalTextures();
 
-        videoPreviewBtn.disabled = false;
+        exampleVideoBtn.disabled = false;
+        applyPreviewBtn.disabled = false;
         specsPreviewBtn.disabled = true;
       }
 
