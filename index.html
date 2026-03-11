@@ -558,7 +558,6 @@
       }
 
       function setupUIEvents() {
-        // Button 1: Projekt-Example-Videos verwenden
         exampleVideoBtn.addEventListener("click", async () => {
           console.log("Example Video clicked");
           exampleVideoBtn.disabled = true;
@@ -575,13 +574,11 @@
           }
         });
 
-        // Button 2: zurück zu Specs (Bildtexturen)
         specsPreviewBtn.addEventListener("click", () => {
           console.log("Specs Preview clicked");
           switchBackToSpecs();
         });
 
-        // Button 3: User-Uploads anwenden
         applyPreviewBtn.addEventListener("click", async () => {
           console.log("Apply Preview clicked");
           applyPreviewBtn.disabled = true;
@@ -751,23 +748,42 @@
           return;
         }
 
-        if (userVideos.inner.video) {
-          for (const mat of innerMaterials) {
-            addEntry(mat, userVideos.inner.video, userVideos.inner.texture);
-          }
-        }
-        if (userVideos.outer.video) {
-          for (const mat of outerMaterials) {
-            addEntry(mat, userVideos.outer.video, userVideos.outer.texture);
-          }
-        }
-        if (userVideos.floor.video) {
-          for (const mat of floorMaterials) {
-            addEntry(mat, userVideos.floor.video, userVideos.floor.texture);
-          }
-        }
+        // NEU: Mapping über Textur-Basenamen statt Gruppen-Arrays
+        model.traverse((child) => {
+          if (!child.isMesh || !child.material) return;
+          const mats = Array.isArray(child.material)
+            ? child.material
+            : [child.material];
 
-        console.log("pendingEntries User", pendingEntries.length);
+          for (const mat of mats) {
+            const baseMap = originalMaps.get(mat);
+            if (!baseMap || !baseMap.image || !baseMap.image.src) continue;
+
+            const src = baseMap.image.src;
+            const fileName = src.split("/").pop();
+            if (!fileName) continue;
+            const baseName = fileName.replace(/\.[^/.]+$/, "").toLowerCase();
+
+            if (
+              userVideos.inner.video &&
+              baseName === "portal_inside_specs".toLowerCase()
+            ) {
+              addEntry(mat, userVideos.inner.video, userVideos.inner.texture);
+            } else if (
+              userVideos.outer.video &&
+              baseName === "portal_outside_specs".toLowerCase()
+            ) {
+              addEntry(mat, userVideos.outer.video, userVideos.outer.texture);
+            } else if (
+              userVideos.floor.video &&
+              baseName === "portal_floor_specs".toLowerCase()
+            ) {
+              addEntry(mat, userVideos.floor.video, userVideos.floor.texture);
+            }
+          }
+        });
+
+        console.log("pendingEntries User", pendingEntries.length, pendingEntries);
 
         if (pendingEntries.length === 0) {
           loadingOverlay.style.display = "none";
