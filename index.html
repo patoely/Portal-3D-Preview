@@ -507,24 +507,20 @@
               const name = (mat.name || "").toLowerCase();
               const meshName = (child.name || "").toLowerCase();
 
+              // Exakte Gruppierung nach deinen Specs-Namen
               if (
-                name.includes("inner") ||
-                meshName.includes("inner") ||
-                name.includes("inside")
+                name.includes("portal_inside_specs") ||
+                meshName.includes("portal_inside_specs")
               ) {
                 innerMaterials.push(mat);
               } else if (
-                name.includes("outer") ||
-                meshName.includes("outer") ||
-                name.includes("screen") ||
-                meshName.includes("screen")
+                name.includes("portal_outside_specs") ||
+                meshName.includes("portal_outside_specs")
               ) {
                 outerMaterials.push(mat);
               } else if (
-                name.includes("floor") ||
-                meshName.includes("floor") ||
-                name.includes("ground") ||
-                meshName.includes("ground")
+                name.includes("portal_floor_specs") ||
+                meshName.includes("portal_floor_specs")
               ) {
                 floorMaterials.push(mat);
               }
