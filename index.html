@@ -172,7 +172,7 @@
 
     <!-- Toolbar -->
     <div id="toolbar" class="overlay">
-      <button id="videoPreviewBtn" class="btn">Video Preview</button>
+      <button id="videoPreviewBtn" class="btn">Apply Preview</button>
       <button id="specsPreviewBtn" class="btn secondary" disabled>
         Specs Preview
       </button>
@@ -514,7 +514,7 @@
                 name.includes("floor") ||
                 meshName.includes("floor") ||
                 name.includes("ground") ||
-                meshName.includes("ground")
+                name.includes("ground")
               ) {
                 floorMaterials.push(mat);
               }
@@ -601,6 +601,9 @@
         texture.generateMipmaps = false;
 
         userVideos[slot] = { video, texture, url, isUser: true };
+
+        // Input reset, damit derselbe File erneut ausgewählt werden kann. [web:50]
+        input.value = "";
       }
 
       async function switchToVideos() {
@@ -731,8 +734,6 @@
         loadingOverlay.style.display = "none";
       }
 
-      // Minimale Wartezeit: User-Videos praktisch sofort (nur kurzer readyState-Check),
-      // Projektvideos warten kurz auf genügend Daten. [web:37]
       function waitForVideoReady(video, isUserVideo = false) {
         return new Promise((resolve) => {
           if (video.readyState >= 2) {
