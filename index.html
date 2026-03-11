@@ -507,7 +507,6 @@
               const name = (mat.name || "").toLowerCase();
               const meshName = (child.name || "").toLowerCase();
 
-              // Exakte Gruppierung nach deinen Specs-Namen
               if (
                 name.includes("portal_inside_specs") ||
                 meshName.includes("portal_inside_specs")
@@ -620,13 +619,19 @@
         video.preload = "auto";
         video.src = url;
 
-        const texture = new THREE.VideoTexture(video);
-        texture.colorSpace = THREE.SRGBColorSpace;
-        texture.minFilter = THREE.LinearFilter;
-        texture.magFilter = THREE.LinearFilter;
-        texture.generateMipmaps = false;
+        const onLoadedData = () => {
+          video.removeEventListener("loadeddata", onLoadedData);
 
-        userVideos[slot] = { video, texture, url, isUser: true };
+          const texture = new THREE.VideoTexture(video);
+          texture.colorSpace = THREE.SRGBColorSpace;
+          texture.minFilter = THREE.LinearFilter;
+          texture.magFilter = THREE.LinearFilter;
+          texture.generateMipmaps = false;
+
+          userVideos[slot] = { video, texture, url, isUser: true };
+        };
+
+        video.addEventListener("loadeddata", onLoadedData, { once: true });
 
         input.value = "";
       }
@@ -799,7 +804,6 @@
         loadingOverlay.style.display = "none";
       }
 
-      // minimale Wartezeit, User-Videos aus Cache praktisch sofort
       function waitForVideoReady(video, isUserVideo = false) {
         return new Promise((resolve) => {
           if (video.readyState >= 2) {
