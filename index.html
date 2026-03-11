@@ -5,7 +5,7 @@
     <title>3D Viewer - The Portal</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 
-    <!-- Importmap for three and addons (CDN) -->
+    <!-- Importmap für three + Addons (ES-Module via CDN) -->
     <script type="importmap">
       {
         "imports": {
@@ -165,10 +165,12 @@
   </head>
 
   <body>
+    <!-- Loading-Overlay -->
     <div id="loadingOverlay" class="overlay">
       <span id="loadingText">Lade Modell ...</span>
     </div>
 
+    <!-- Toolbar -->
     <div id="toolbar" class="overlay">
       <button id="videoPreviewBtn" class="btn">Video Preview</button>
       <button id="specsPreviewBtn" class="btn secondary" disabled>
@@ -206,6 +208,7 @@
       </div>
     </div>
 
+    <!-- Info-Panel -->
     <div id="infoPanel" class="overlay">
       <div class="info-title">Steuerung</div>
       <div>
@@ -247,9 +250,9 @@
       const floorMaterials = [];
 
       const userVideos = {
-        inner: { video: null, texture: null, url: null },
-        outer: { video: null, texture: null, url: null },
-        floor: { video: null, texture: null, url: null }
+        inner: { video: null, texture: null, url: null, isUser: true },
+        outer: { video: null, texture: null, url: null, isUser: true },
+        floor: { video: null, texture: null, url: null, isUser: true }
       };
 
       let activeVideoEntries = [];
@@ -491,7 +494,6 @@
 
               originalMaps.set(mat, mat.map || null);
 
-              // Hooks zum Gruppieren nach Material-/Meshnamen
               const name = (mat.name || "").toLowerCase();
               const meshName = (child.name || "").toLowerCase();
 
@@ -598,7 +600,7 @@
         texture.magFilter = THREE.LinearFilter;
         texture.generateMipmaps = false;
 
-        userVideos[slot] = { video, texture, url };
+        userVideos[slot] = { video, texture, url, isUser: true };
       }
 
       async function switchToVideos() {
@@ -612,8 +614,8 @@
 
         const pendingEntries = [];
 
-        const addEntry = (mat, video, videoTexture) => {
-          pendingEntries.push({ mat, video, videoTexture });
+        const addEntry = (mat, video, videoTexture, isUser = false) => {
+          pendingEntries.push({ mat, video, videoTexture, isUser });
         };
 
         const hasUserVideos =
@@ -624,20 +626,22 @@
         if (hasUserVideos) {
           if (userVideos.inner.video) {
             for (const mat of innerMaterials) {
-              addEntry(mat, userVideos.inner.video, userVideos.inner.texture);
+              addEntry(mat, userVideos.inner.video, userVideos.inner.texture, true);
             }
           }
           if (userVideos.outer.video) {
             for (const mat of outerMaterials) {
-              addEntry(mat, userVideos.outer.video, userVideos.outer.texture);
+              addEntry(mat, userVideos.outer.video, userVideos.outer.texture, true);
             }
           }
           if (userVideos.floor.video) {
             for (const mat of floorMaterials) {
-              addEntry(mat, userVideos.floor.video, userVideos.floor.texture);
+              addEntry(mat, userVideos.floor.video, userVideos.floor.texture, true);
             }
           }
-        } else {
+        }
+
+        if (!hasUserVideos) {
           model.traverse((child) => {
             if (!child.isMesh || !child.material) return;
             const mats = Array.isArray(child.material)
@@ -666,7 +670,7 @@
               texture.magFilter = THREE.LinearFilter;
               texture.generateMipmaps = false;
 
-              addEntry(mat, video, texture);
+              addEntry(mat, video, texture, false);
             }
           });
         }
@@ -678,11 +682,21 @@
           return;
         }
 
-        const uniqueVideos = [
-          ...new Set(pendingEntries.map((e) => e.video))
-        ];
+        const videoMap = new Map();
+        for (const entry of pendingEntries) {
+          if (!videoMap.has(entry.video)) {
+            videoMap.set(entry.video, entry.isUser);
+          } else if (entry.isUser) {
+            videoMap.set(entry.video, true);
+          }
+        }
 
-        await Promise.all(uniqueVideos.map((v) => waitForVideoReady(v)));
+        const uniqueVideos = Array.from(videoMap.keys());
+        const uniqueFlags = Array.from(videoMap.values());
+
+        await Promise.all(
+          uniqueVideos.map((v, i) => waitForVideoReady(v, uniqueFlags[i]))
+        );
 
         for (const vid of uniqueVideos) {
           try {
@@ -717,27 +731,48 @@
         loadingOverlay.style.display = "none";
       }
 
-      function waitForVideoReady(video) {
+      // Minimale Wartezeit: User-Videos praktisch sofort (nur kurzer readyState-Check),
+      // Projektvideos warten kurz auf genügend Daten. [web:37]
+      function waitForVideoReady(video, isUserVideo = false) {
         return new Promise((resolve) => {
-          if (video.readyState >= 3) {
+          if (video.readyState >= 2) {
             resolve();
             return;
           }
-          const onCanPlay = () => {
-            cleanup();
-            resolve();
-          };
-          const onLoadedData = () => {
-            cleanup();
-            resolve();
-          };
-          const cleanup = () => {
-            video.removeEventListener("canplaythrough", onCanPlay);
-            video.removeEventListener("loadeddata", onLoadedData);
-          };
-          video.addEventListener("canplaythrough", onCanPlay, { once: true });
-          video.addEventListener("loadeddata", onLoadedData, { once: true });
-          video.load();
+
+          if (isUserVideo) {
+            const onData = () => {
+              cleanup();
+              resolve();
+            };
+            const cleanup = () => {
+              video.removeEventListener("loadeddata", onData);
+              video.removeEventListener("canplay", onData);
+            };
+            video.addEventListener("loadeddata", onData, { once: true });
+            video.addEventListener("canplay", onData, { once: true });
+            video.load();
+            setTimeout(() => {
+              cleanup();
+              resolve();
+            }, 200);
+          } else {
+            const onData = () => {
+              cleanup();
+              resolve();
+            };
+            const cleanup = () => {
+              video.removeEventListener("loadeddata", onData);
+              video.removeEventListener("canplaythrough", onData);
+            };
+            video.addEventListener("loadeddata", onData, { once: true });
+            video.addEventListener("canplaythrough", onData, { once: true });
+            video.load();
+            setTimeout(() => {
+              cleanup();
+              resolve();
+            }, 1000);
+          }
         });
       }
 
@@ -753,8 +788,8 @@
           ];
           if (videos.length <= 1) return;
 
-          let refVideo = videos[0];
-          let refTime = refVideo.currentTime;
+          const refVideo = videos[0];
+          const refTime = refVideo.currentTime;
 
           for (let i = 1; i < videos.length; i++) {
             const v = videos[i];
@@ -815,7 +850,7 @@
           if (slot.url) {
             URL.revokeObjectURL(slot.url);
           }
-          userVideos[key] = { video: null, texture: null, url: null };
+          userVideos[key] = { video: null, texture: null, url: null, isUser: true };
         }
 
         activeVideoEntries = [];
