@@ -175,6 +175,9 @@
       <!-- Button 1: Example Video (Projektvideos) -->
       <button id="exampleVideoBtn" class="btn">Example Video</button>
 
+      <!-- Prominenter Sweetspot-Button -->
+      <button id="sweetspotBtn" class="btn">Sweetspot View</button>
+
       <!-- Button 2: Specs Preview -->
       <button id="specsPreviewBtn" class="btn secondary" disabled>
         Specs Preview
@@ -238,6 +241,7 @@
       const loadingOverlay = document.getElementById("loadingOverlay");
       const loadingText = document.getElementById("loadingText");
       const exampleVideoBtn = document.getElementById("exampleVideoBtn");
+      const sweetspotBtn = document.getElementById("sweetspotBtn");
       const specsPreviewBtn = document.getElementById("specsPreviewBtn");
       const applyPreviewBtn = document.getElementById("applyPreviewBtn");
       const innerVideoInput = document.getElementById("innerVideoInput");
@@ -293,6 +297,7 @@
           params.autoRotateY = false;
           applyParamsToModel();
           updateGUI();
+          goToSweetspot();
         }
       };
 
@@ -313,6 +318,8 @@
           0.1,
           10000
         );
+
+        // Erstmal eine neutrale Position, Sweetspot wird nach Model-Setup gesetzt
         camera.position.set(0, 3, 8);
 
         renderer = new THREE.WebGLRenderer({ antialias: true });
@@ -547,10 +554,8 @@
         const maxDim = Math.max(size.x, size.y, size.z);
         const distance = maxDim * 2.5 || 10;
 
-        camera.position.set(distance * 0.6, distance * 0.7, distance * 0.9);
-        camera.lookAt(0, size.y * 0.5, 0);
-        controls.target.set(0, size.y * 0.5, 0);
-        controls.update();
+        // Portal steht um den Ursprung, Sweetspot ca. 5m davor auf 1.75m Höhe
+        goToSweetspot();
 
         scene.add(root);
 
@@ -572,6 +577,11 @@
           } finally {
             loadingOverlay.style.display = "none";
           }
+        });
+
+        sweetspotBtn.addEventListener("click", () => {
+          console.log("Sweetspot View clicked");
+          goToSweetspot();
         });
 
         specsPreviewBtn.addEventListener("click", () => {
@@ -604,6 +614,14 @@
         floorVideoInput.addEventListener("change", () => {
           handleUserVideoUpload("floor", floorVideoInput);
         });
+      }
+
+      function goToSweetspot() {
+        if (!camera || !controls) return;
+        // Wenn dein Portal Richtung -Z „auf“ den Betrachter zeigt, nimm z.B. z = 5;
+        camera.position.set(0, 1.75, 5);
+        controls.target.set(0, 1.75, 0);
+        controls.update();
       }
 
       function handleUserVideoUpload(slot, input) {
@@ -748,7 +766,7 @@
           return;
         }
 
-        // NEU: Mapping über Textur-Basenamen statt Gruppen-Arrays
+        // Mapping über Textur-Basenamen
         model.traverse((child) => {
           if (!child.isMesh || !child.material) return;
           const mats = Array.isArray(child.material)
