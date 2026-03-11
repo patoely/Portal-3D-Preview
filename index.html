@@ -527,6 +527,13 @@
           }
         });
 
+        console.log(
+          "Groups inner/outer/floor",
+          innerMaterials.length,
+          outerMaterials.length,
+          floorMaterials.length
+        );
+
         const box = new THREE.Box3().setFromObject(root);
         const size = new THREE.Vector3();
         const center = new THREE.Vector3();
@@ -553,6 +560,7 @@
       function setupUIEvents() {
         // Button 1: Projekt-Example-Videos verwenden
         exampleVideoBtn.addEventListener("click", async () => {
+          console.log("Example Video clicked");
           exampleVideoBtn.disabled = true;
           specsPreviewBtn.disabled = true;
           applyPreviewBtn.disabled = true;
@@ -560,7 +568,7 @@
             await switchToProjectVideos();
             specsPreviewBtn.disabled = false;
           } catch (e) {
-            console.error(e);
+            console.error("switchToProjectVideos error", e);
             exampleVideoBtn.disabled = false;
           } finally {
             loadingOverlay.style.display = "none";
@@ -569,11 +577,13 @@
 
         // Button 2: zurück zu Specs (Bildtexturen)
         specsPreviewBtn.addEventListener("click", () => {
+          console.log("Specs Preview clicked");
           switchBackToSpecs();
         });
 
         // Button 3: User-Uploads anwenden
         applyPreviewBtn.addEventListener("click", async () => {
+          console.log("Apply Preview clicked");
           applyPreviewBtn.disabled = true;
           specsPreviewBtn.disabled = true;
           exampleVideoBtn.disabled = true;
@@ -581,7 +591,7 @@
             await switchToUserVideos();
             specsPreviewBtn.disabled = false;
           } catch (e) {
-            console.error(e);
+            console.error("switchToUserVideos error", e);
             applyPreviewBtn.disabled = false;
           } finally {
             loadingOverlay.style.display = "none";
@@ -602,6 +612,8 @@
       function handleUserVideoUpload(slot, input) {
         const file = input.files && input.files[0];
         if (!file) return;
+
+        console.log("Upload slot", slot, "file", file.name);
 
         const current = userVideos[slot];
         if (current && current.url) {
@@ -629,6 +641,7 @@
           texture.generateMipmaps = false;
 
           userVideos[slot] = { video, texture, url, isUser: true };
+          console.log("User video ready for slot", slot);
         };
 
         video.addEventListener("loadeddata", onLoadedData, { once: true });
@@ -683,6 +696,8 @@
           }
         });
 
+        console.log("pendingEntries Example", pendingEntries.length);
+
         if (pendingEntries.length === 0) {
           loadingOverlay.style.display = "none";
           exampleVideoBtn.disabled = false;
@@ -699,7 +714,16 @@
       }
 
       async function switchToUserVideos() {
-        if (!model) return;
+        if (!model) {
+          console.log("switchToUserVideos: no model");
+          return;
+        }
+
+        console.log("switchToUserVideos called", {
+          inner: !!userVideos.inner.video,
+          outer: !!userVideos.outer.video,
+          floor: !!userVideos.floor.video
+        });
 
         stopSyncMonitor();
         stopAndDisposeVideos();
@@ -716,6 +740,8 @@
           !!userVideos.inner.video ||
           !!userVideos.outer.video ||
           !!userVideos.floor.video;
+
+        console.log("hasUserVideos", hasUserVideos);
 
         if (!hasUserVideos) {
           loadingOverlay.style.display = "none";
@@ -740,6 +766,8 @@
             addEntry(mat, userVideos.floor.video, userVideos.floor.texture);
           }
         }
+
+        console.log("pendingEntries User", pendingEntries.length);
 
         if (pendingEntries.length === 0) {
           loadingOverlay.style.display = "none";
@@ -785,6 +813,8 @@
           entry.mat.map = entry.videoTexture;
           entry.mat.needsUpdate = true;
         }
+
+        console.log("Video maps gesetzt auf", pendingEntries.length, "Materials");
 
         await Promise.all(
           uniqueVideos.map((v) =>
