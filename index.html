@@ -1,0 +1,868 @@
+<!DOCTYPE html>
+<html lang="de">
+  <head>
+    <meta charset="utf-8" />
+    <title>3D Viewer - The Portal</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <!-- Importmap for three and addons (CDN) -->
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://unpkg.com/three@0.160.1/build/three.module.js",
+          "three/addons/": "https://unpkg.com/three@0.160.1/examples/jsm/"
+        }
+      }
+    </script>
+
+    <style>
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        margin: 0;
+        padding: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        background: #000;
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI",
+          sans-serif;
+        color: #f0f0f0;
+      }
+
+      body {
+        position: relative;
+      }
+
+      canvas {
+        display: block;
+      }
+
+      .overlay {
+        position: fixed;
+        left: 12px;
+        color: #f0f0f0;
+        z-index: 10;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+
+      #loadingOverlay {
+        top: 10px;
+        padding: 6px 10px;
+        background: rgba(0, 0, 0, 0.8);
+        border-radius: 4px;
+        border: 1px solid #333;
+        pointer-events: none;
+      }
+
+      #toolbar {
+        top: 60px;
+        padding: 8px 10px;
+        background: rgba(0, 0, 0, 0.85);
+        border-radius: 4px;
+        border: 1px solid #333;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+        align-items: center;
+      }
+
+      #infoPanel {
+        bottom: 10px;
+        padding: 6px 10px;
+        background: rgba(0, 0, 0, 0.75);
+        border-radius: 4px;
+        border: 1px solid #333;
+        max-width: 260px;
+      }
+
+      .btn {
+        appearance: none;
+        border: none;
+        padding: 6px 10px;
+        border-radius: 4px;
+        font-size: 12px;
+        cursor: pointer;
+        background: #2d6bff;
+        color: #fff;
+        transition: background 0.15s ease, transform 0.1s ease,
+          box-shadow 0.15s ease;
+        white-space: nowrap;
+      }
+
+      .btn.secondary {
+        background: #3a3a3a;
+        color: #f0f0f0;
+      }
+
+      .btn:disabled {
+        opacity: 0.4;
+        cursor: default;
+        box-shadow: none;
+        transform: none;
+      }
+
+      .btn:not(:disabled):hover {
+        background: #315fff;
+      }
+
+      .btn.secondary:not(:disabled):hover {
+        background: #4a4a4a;
+      }
+
+      .btn:not(:disabled):active {
+        transform: translateY(1px);
+        box-shadow: 0 0 0 transparent;
+      }
+
+      .file-input-wrapper {
+        position: relative;
+        overflow: hidden;
+        display: inline-block;
+      }
+
+      .file-input-wrapper input[type="file"] {
+        position: absolute;
+        left: 0;
+        top: 0;
+        opacity: 0;
+        cursor: pointer;
+        width: 100%;
+        height: 100%;
+      }
+
+      .file-label {
+        padding: 6px 10px;
+        border-radius: 4px;
+        background: #222;
+        border: 1px solid #444;
+        font-size: 11px;
+        cursor: pointer;
+        color: #f0f0f0;
+        white-space: nowrap;
+      }
+
+      .file-label:hover {
+        background: #2c2c2c;
+      }
+
+      @media (max-width: 600px) {
+        #toolbar {
+          right: 10px;
+          max-width: calc(100% - 24px);
+        }
+      }
+
+      .info-title {
+        font-weight: 600;
+        margin-bottom: 4px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div id="loadingOverlay" class="overlay">
+      <span id="loadingText">Lade Modell ...</span>
+    </div>
+
+    <div id="toolbar" class="overlay">
+      <button id="videoPreviewBtn" class="btn">Video Preview</button>
+      <button id="specsPreviewBtn" class="btn secondary" disabled>
+        Specs Preview
+      </button>
+
+      <div class="file-input-wrapper">
+        <span class="file-label">Inner Screen Video</span>
+        <input
+          id="innerVideoInput"
+          type="file"
+          accept="video/*"
+          title="Inner Screen Video"
+        />
+      </div>
+
+      <div class="file-input-wrapper">
+        <span class="file-label">Outer Screen Video</span>
+        <input
+          id="outerVideoInput"
+          type="file"
+          accept="video/*"
+          title="Outer Screen Video"
+        />
+      </div>
+
+      <div class="file-input-wrapper">
+        <span class="file-label">Floor Video</span>
+        <input
+          id="floorVideoInput"
+          type="file"
+          accept="video/*"
+          title="Floor Video"
+        />
+      </div>
+    </div>
+
+    <div id="infoPanel" class="overlay">
+      <div class="info-title">Steuerung</div>
+      <div>
+        Maus links: Orbit.<br />
+        Maus mittig / Scroll: Zoom.<br />
+        Maus rechts: Schwenken.<br />
+        Shift + Drag: schneller.<br />
+        Mausrad: nah / fern.
+      </div>
+    </div>
+
+    <script type="module">
+      import * as THREE from "three";
+      import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+      import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+      import { GUI } from "three/addons/libs/lil-gui.module.min.js";
+
+      const loadingOverlay = document.getElementById("loadingOverlay");
+      const loadingText = document.getElementById("loadingText");
+      const videoPreviewBtn = document.getElementById("videoPreviewBtn");
+      const specsPreviewBtn = document.getElementById("specsPreviewBtn");
+      const innerVideoInput = document.getElementById("innerVideoInput");
+      const outerVideoInput = document.getElementById("outerVideoInput");
+      const floorVideoInput = document.getElementById("floorVideoInput");
+
+      let renderer;
+      let scene;
+      let camera;
+      let controls;
+      let model = null;
+
+      let gridHelper;
+      let groundPlane;
+
+      const originalMaps = new WeakMap();
+
+      const innerMaterials = [];
+      const outerMaterials = [];
+      const floorMaterials = [];
+
+      const userVideos = {
+        inner: { video: null, texture: null, url: null },
+        outer: { video: null, texture: null, url: null },
+        floor: { video: null, texture: null, url: null }
+      };
+
+      let activeVideoEntries = [];
+      let isUsingVideos = false;
+      let syncIntervalId = null;
+
+      const params = {
+        posX: 0,
+        posY: 0,
+        posZ: 0,
+        rotX: 0,
+        rotY: 0,
+        rotZ: 0,
+        scale: 1,
+        wireframe: false,
+        showGrid: true,
+        autoRotateY: false,
+        reset() {
+          params.posX = 0;
+          params.posY = 0;
+          params.posZ = 0;
+          params.rotX = 0;
+          params.rotY = 0;
+          params.rotZ = 0;
+          params.scale = 1;
+          params.wireframe = false;
+          params.showGrid = true;
+          params.autoRotateY = false;
+          applyParamsToModel();
+          updateGUI();
+        }
+      };
+
+      let gui;
+      const deg = THREE.MathUtils.degToRad;
+
+      init();
+      loadModel();
+      animate();
+
+      function init() {
+        scene = new THREE.Scene();
+        scene.background = new THREE.Color(0x111111);
+
+        camera = new THREE.PerspectiveCamera(
+          45,
+          window.innerWidth / window.innerHeight,
+          0.1,
+          10000
+        );
+        camera.position.set(0, 3, 8);
+
+        renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        renderer.shadowMap.enabled = true;
+        document.body.appendChild(renderer.domElement);
+
+        controls = new OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+
+        const hemiLight = new THREE.HemisphereLight(0xffffff, 0x444444, 1.2);
+        hemiLight.position.set(0, 50, 0);
+        scene.add(hemiLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 1.0);
+        dirLight.position.set(10, 20, 10);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.set(2048, 2048);
+        dirLight.shadow.camera.near = 0.5;
+        dirLight.shadow.camera.far = 200;
+        dirLight.shadow.camera.left = -50;
+        dirLight.shadow.camera.right = 50;
+        dirLight.shadow.camera.top = 50;
+        dirLight.shadow.camera.bottom = -50;
+        scene.add(dirLight);
+
+        const fillLight = new THREE.DirectionalLight(0xffffff, 0.3);
+        fillLight.position.set(-20, 10, -10);
+        scene.add(fillLight);
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
+        scene.add(ambientLight);
+
+        gridHelper = new THREE.GridHelper(200, 200, 0x444444, 0x222222);
+        scene.add(gridHelper);
+
+        const groundGeo = new THREE.PlaneGeometry(500, 500);
+        const groundMat = new THREE.ShadowMaterial({ opacity: 0.3 });
+        groundPlane = new THREE.Mesh(groundGeo, groundMat);
+        groundPlane.rotation.x = -Math.PI / 2;
+        groundPlane.position.y = 0;
+        groundPlane.receiveShadow = true;
+        scene.add(groundPlane);
+
+        setupGUI();
+        setupUIEvents();
+
+        window.addEventListener("resize", onWindowResize);
+      }
+
+      function setupGUI() {
+        gui = new GUI({ width: 260 });
+
+        const posFolder = gui.addFolder("Position");
+        posFolder.add(params, "posX", -500, 500, 1).onChange(applyParamsToModel);
+        posFolder.add(params, "posY", -500, 500, 1).onChange(applyParamsToModel);
+        posFolder.add(params, "posZ", -500, 500, 1).onChange(applyParamsToModel);
+
+        const rotFolder = gui.addFolder("Rotation");
+        rotFolder.add(params, "rotX", -180, 180, 1).onChange(applyParamsToModel);
+        rotFolder.add(params, "rotY", -180, 180, 1).onChange(applyParamsToModel);
+        rotFolder.add(params, "rotZ", -180, 180, 1).onChange(applyParamsToModel);
+
+        const scaleFolder = gui.addFolder("Skalierung");
+        scaleFolder.add(params, "scale", 0.01, 10, 0.01).onChange(
+          applyParamsToModel
+        );
+
+        const viewFolder = gui.addFolder("Ansicht");
+        viewFolder.add(params, "wireframe").onChange(applyParamsToModel);
+        viewFolder.add(params, "showGrid").onChange(applyParamsToModel);
+        viewFolder.add(params, "autoRotateY");
+
+        gui.add(params, "reset").name("Reset");
+      }
+
+      function updateGUI() {
+        gui.updateDisplay();
+      }
+
+      function applyParamsToModel() {
+        if (!model) return;
+
+        model.position.set(params.posX, params.posY, params.posZ);
+        model.rotation.set(deg(params.rotX), deg(params.rotY), deg(params.rotZ));
+        model.scale.setScalar(params.scale);
+
+        model.traverse((child) => {
+          if (child.isMesh && child.material) {
+            const mats = Array.isArray(child.material)
+              ? child.material
+              : [child.material];
+            for (const m of mats) {
+              m.wireframe = !!params.wireframe;
+            }
+          }
+        });
+
+        const visible = !!params.showGrid;
+        gridHelper.visible = visible;
+        groundPlane.visible = visible;
+      }
+
+      function onWindowResize() {
+        camera.aspect = window.innerWidth / window.innerHeight;
+        camera.updateProjectionMatrix();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+      }
+
+      function loadModel() {
+        const manager = new THREE.LoadingManager();
+
+        manager.onStart = () => {
+          loadingOverlay.style.display = "block";
+          loadingText.textContent = "Lade Assets ...";
+        };
+
+        manager.onProgress = (url, loaded, total) => {
+          loadingText.textContent = `Lade Assets ... ${loaded}/${total}`;
+        };
+
+        manager.onError = (url) => {
+          loadingText.textContent = `Fehler beim Laden: ${url}`;
+        };
+
+        manager.setURLModifier((url) => {
+          const lower = url.toLowerCase();
+          const isImage =
+            lower.endsWith(".png") ||
+            lower.endsWith(".jpg") ||
+            lower.endsWith(".jpeg") ||
+            lower.endsWith(".webp") ||
+            lower.endsWith(".bmp") ||
+            lower.endsWith(".tga") ||
+            lower.endsWith(".tif") ||
+            lower.endsWith(".tiff");
+
+          if (isImage) {
+            const fileName = url.split("/").pop();
+            return "models/" + fileName;
+          }
+          return url;
+        });
+
+        const loader = new FBXLoader(manager);
+        loader.setPath("models/");
+        loader.setResourcePath("models/");
+
+        loader.load(
+          "Portal_mapped.fbx",
+          (fbx) => {
+            model = fbx;
+            setupModel(model);
+            loadingOverlay.style.display = "none";
+          },
+          undefined,
+          (error) => {
+            console.error("Fehler beim Laden des FBX:", error);
+            loadingText.textContent = "Fehler beim Laden des Modells.";
+          }
+        );
+      }
+
+      function setupModel(root) {
+        root.traverse((child) => {
+          if (child.isMesh) {
+            child.castShadow = true;
+            child.receiveShadow = true;
+
+            const mats = Array.isArray(child.material)
+              ? child.material
+              : [child.material];
+
+            for (const mat of mats) {
+              if (!mat) continue;
+              mat.side = THREE.DoubleSide;
+
+              if (mat.map) {
+                mat.map.colorSpace = THREE.SRGBColorSpace;
+              }
+              if (mat.emissiveMap) {
+                mat.emissiveMap.colorSpace = THREE.SRGBColorSpace;
+              }
+              if (mat.specularMap) {
+                mat.specularMap.colorSpace = THREE.SRGBColorSpace;
+              }
+
+              originalMaps.set(mat, mat.map || null);
+
+              // Hooks zum Gruppieren nach Material-/Meshnamen
+              const name = (mat.name || "").toLowerCase();
+              const meshName = (child.name || "").toLowerCase();
+
+              if (
+                name.includes("inner") ||
+                meshName.includes("inner") ||
+                name.includes("inside")
+              ) {
+                innerMaterials.push(mat);
+              } else if (
+                name.includes("outer") ||
+                meshName.includes("outer") ||
+                name.includes("screen") ||
+                meshName.includes("screen")
+              ) {
+                outerMaterials.push(mat);
+              } else if (
+                name.includes("floor") ||
+                meshName.includes("floor") ||
+                name.includes("ground") ||
+                meshName.includes("ground")
+              ) {
+                floorMaterials.push(mat);
+              }
+            }
+          }
+        });
+
+        const box = new THREE.Box3().setFromObject(root);
+        const size = new THREE.Vector3();
+        const center = new THREE.Vector3();
+        box.getSize(size);
+        box.getCenter(center);
+
+        root.position.sub(center);
+        const minY = box.min.y - center.y;
+        root.position.y -= minY;
+
+        const maxDim = Math.max(size.x, size.y, size.z);
+        const distance = maxDim * 2.5 || 10;
+
+        camera.position.set(distance * 0.6, distance * 0.7, distance * 0.9);
+        camera.lookAt(0, size.y * 0.5, 0);
+        controls.target.set(0, size.y * 0.5, 0);
+        controls.update();
+
+        scene.add(root);
+
+        applyParamsToModel();
+      }
+
+      function setupUIEvents() {
+        videoPreviewBtn.addEventListener("click", async () => {
+          videoPreviewBtn.disabled = true;
+          specsPreviewBtn.disabled = true;
+          try {
+            await switchToVideos();
+            specsPreviewBtn.disabled = false;
+          } catch (e) {
+            console.error(e);
+            videoPreviewBtn.disabled = false;
+            specsPreviewBtn.disabled = true;
+          }
+        });
+
+        specsPreviewBtn.addEventListener("click", () => {
+          switchBackToSpecs();
+        });
+
+        innerVideoInput.addEventListener("change", () => {
+          handleUserVideoUpload("inner", innerVideoInput);
+        });
+        outerVideoInput.addEventListener("change", () => {
+          handleUserVideoUpload("outer", outerVideoInput);
+        });
+        floorVideoInput.addEventListener("change", () => {
+          handleUserVideoUpload("floor", floorVideoInput);
+        });
+      }
+
+      function handleUserVideoUpload(slot, input) {
+        const file = input.files && input.files[0];
+        if (!file) return;
+
+        const current = userVideos[slot];
+        if (current && current.url) {
+          URL.revokeObjectURL(current.url);
+        }
+        if (current && current.texture) {
+          current.texture.dispose();
+        }
+
+        const url = URL.createObjectURL(file);
+        const video = document.createElement("video");
+        video.loop = true;
+        video.muted = true;
+        video.playsInline = true;
+        video.preload = "auto";
+        video.src = url;
+
+        const texture = new THREE.VideoTexture(video);
+        texture.colorSpace = THREE.SRGBColorSpace;
+        texture.minFilter = THREE.LinearFilter;
+        texture.magFilter = THREE.LinearFilter;
+        texture.generateMipmaps = false;
+
+        userVideos[slot] = { video, texture, url };
+      }
+
+      async function switchToVideos() {
+        if (!model) return;
+
+        stopSyncMonitor();
+        stopAndDisposeVideos();
+
+        loadingOverlay.style.display = "block";
+        loadingText.textContent = "Bereite Videos vor ...";
+
+        const pendingEntries = [];
+
+        const addEntry = (mat, video, videoTexture) => {
+          pendingEntries.push({ mat, video, videoTexture });
+        };
+
+        const hasUserVideos =
+          !!userVideos.inner.video ||
+          !!userVideos.outer.video ||
+          !!userVideos.floor.video;
+
+        if (hasUserVideos) {
+          if (userVideos.inner.video) {
+            for (const mat of innerMaterials) {
+              addEntry(mat, userVideos.inner.video, userVideos.inner.texture);
+            }
+          }
+          if (userVideos.outer.video) {
+            for (const mat of outerMaterials) {
+              addEntry(mat, userVideos.outer.video, userVideos.outer.texture);
+            }
+          }
+          if (userVideos.floor.video) {
+            for (const mat of floorMaterials) {
+              addEntry(mat, userVideos.floor.video, userVideos.floor.texture);
+            }
+          }
+        } else {
+          model.traverse((child) => {
+            if (!child.isMesh || !child.material) return;
+            const mats = Array.isArray(child.material)
+              ? child.material
+              : [child.material];
+            for (const mat of mats) {
+              const baseMap = originalMaps.get(mat);
+              if (!baseMap || !baseMap.image || !baseMap.image.src) continue;
+
+              const src = baseMap.image.src;
+              const fileName = src.split("/").pop();
+              if (!fileName) continue;
+              const baseName = fileName.replace(/\.[^/.]+$/, "");
+              const videoUrl = `models/${baseName}.mp4`;
+
+              const video = document.createElement("video");
+              video.loop = true;
+              video.muted = true;
+              video.playsInline = true;
+              video.preload = "auto";
+              video.src = videoUrl;
+
+              const texture = new THREE.VideoTexture(video);
+              texture.colorSpace = THREE.SRGBColorSpace;
+              texture.minFilter = THREE.LinearFilter;
+              texture.magFilter = THREE.LinearFilter;
+              texture.generateMipmaps = false;
+
+              addEntry(mat, video, texture);
+            }
+          });
+        }
+
+        if (pendingEntries.length === 0) {
+          loadingOverlay.style.display = "none";
+          videoPreviewBtn.disabled = false;
+          specsPreviewBtn.disabled = true;
+          return;
+        }
+
+        const uniqueVideos = [
+          ...new Set(pendingEntries.map((e) => e.video))
+        ];
+
+        await Promise.all(uniqueVideos.map((v) => waitForVideoReady(v)));
+
+        for (const vid of uniqueVideos) {
+          try {
+            vid.currentTime = 0;
+          } catch (e) {
+            console.warn("Konnte currentTime nicht setzen", e);
+          }
+        }
+
+        for (const entry of pendingEntries) {
+          entry.mat.map = entry.videoTexture;
+          entry.mat.needsUpdate = true;
+        }
+
+        await Promise.all(
+          uniqueVideos.map((v) =>
+            v
+              .play()
+              .catch((e) =>
+                console.warn("Video konnte nicht automatisch starten", e)
+              )
+          )
+        );
+
+        activeVideoEntries = pendingEntries;
+        isUsingVideos = true;
+
+        startSyncMonitor();
+
+        specsPreviewBtn.disabled = false;
+        videoPreviewBtn.disabled = true;
+        loadingOverlay.style.display = "none";
+      }
+
+      function waitForVideoReady(video) {
+        return new Promise((resolve) => {
+          if (video.readyState >= 3) {
+            resolve();
+            return;
+          }
+          const onCanPlay = () => {
+            cleanup();
+            resolve();
+          };
+          const onLoadedData = () => {
+            cleanup();
+            resolve();
+          };
+          const cleanup = () => {
+            video.removeEventListener("canplaythrough", onCanPlay);
+            video.removeEventListener("loadeddata", onLoadedData);
+          };
+          video.addEventListener("canplaythrough", onCanPlay, { once: true });
+          video.addEventListener("loadeddata", onLoadedData, { once: true });
+          video.load();
+        });
+      }
+
+      function startSyncMonitor() {
+        stopSyncMonitor();
+        if (!isUsingVideos || activeVideoEntries.length === 0) return;
+
+        const tolerance = 0.08;
+
+        syncIntervalId = window.setInterval(() => {
+          const videos = [
+            ...new Set(activeVideoEntries.map((e) => e.video))
+          ];
+          if (videos.length <= 1) return;
+
+          let refVideo = videos[0];
+          let refTime = refVideo.currentTime;
+
+          for (let i = 1; i < videos.length; i++) {
+            const v = videos[i];
+            const dt = Math.abs(v.currentTime - refTime);
+            if (dt > tolerance) {
+              try {
+                v.currentTime = refTime;
+              } catch (e) {
+                console.warn("Fehler beim Syncen des Videos", e);
+              }
+            }
+          }
+        }, 250);
+      }
+
+      function stopSyncMonitor() {
+        if (syncIntervalId !== null) {
+          clearInterval(syncIntervalId);
+          syncIntervalId = null;
+        }
+      }
+
+      function stopAndDisposeVideos() {
+        if (!isUsingVideos && activeVideoEntries.length === 0) return;
+
+        const processedVideos = new Set();
+
+        for (const entry of activeVideoEntries) {
+          const { video, videoTexture } = entry;
+          if (video && !processedVideos.has(video)) {
+            try {
+              video.pause();
+              video.removeAttribute("src");
+              video.load();
+            } catch (e) {
+              console.warn("Fehler beim Stoppen des Videos", e);
+            }
+            processedVideos.add(video);
+          }
+
+          if (videoTexture) {
+            videoTexture.dispose();
+          }
+        }
+
+        for (const key of Object.keys(userVideos)) {
+          const slot = userVideos[key];
+          if (slot.video) {
+            try {
+              slot.video.pause();
+              slot.video.removeAttribute("src");
+              slot.video.load();
+            } catch (e) {}
+          }
+          if (slot.texture) {
+            slot.texture.dispose();
+          }
+          if (slot.url) {
+            URL.revokeObjectURL(slot.url);
+          }
+          userVideos[key] = { video: null, texture: null, url: null };
+        }
+
+        activeVideoEntries = [];
+        isUsingVideos = false;
+      }
+
+      function restoreOriginalTextures() {
+        if (!model) return;
+
+        model.traverse((child) => {
+          if (!child.isMesh || !child.material) return;
+          const mats = Array.isArray(child.material)
+            ? child.material
+            : [child.material];
+          for (const mat of mats) {
+            const original = originalMaps.get(mat) || null;
+            mat.map = original;
+            if (mat.map) {
+              mat.map.needsUpdate = true;
+            }
+            mat.needsUpdate = true;
+          }
+        });
+      }
+
+      function switchBackToSpecs() {
+        stopSyncMonitor();
+        stopAndDisposeVideos();
+        restoreOriginalTextures();
+
+        videoPreviewBtn.disabled = false;
+        specsPreviewBtn.disabled = true;
+      }
+
+      function animate() {
+        requestAnimationFrame(animate);
+
+        if (model && params.autoRotateY) {
+          model.rotation.y += 0.005;
+        }
+
+        if (controls) {
+          controls.update();
+        }
+
+        renderer.render(scene, camera);
+      }
+    </script>
+  </body>
+</html>
