@@ -130,7 +130,7 @@
     <script type="module">
       import * as THREE from "three";
       import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-      import { FBXLoader } from "three/addons/loaders/FBXLoader.js";
+      import { GLTFLoader } from "three/addons/loaders/GLTFLoader.js";
 
       const loadingOverlay = document.getElementById("loadingOverlay");
       const loadingText = document.getElementById("loadingText");
@@ -241,7 +241,7 @@
           loadingText.textContent = `Lade Assets ... ${loaded}/${total}`;
         };
         manager.onError = (url) => {
-          loadingText.textContent = `Fehler beim Laden: ${url}`;
+          loadingText.textContent = "Fehler beim Laden: " + url;
         };
 
         manager.setURLModifier((url) => {
@@ -262,20 +262,20 @@
           return url;
         });
 
-        const loader = new FBXLoader(manager);
+        const loader = new GLTFLoader(manager);
         loader.setPath("models/");
-        loader.setResourcePath("models/");
 
         loader.load(
-          "Portal_mapped.fbx",
-          (fbx) => {
-            model = fbx;
-            setupModel(model);
+          "Portal_mapped.glb",
+          (gltf) => {
+            const root = gltf.scene;
+            model = root;
+            setupModel(root);
             loadingOverlay.style.display = "none";
           },
           undefined,
           (error) => {
-            console.error("Fehler beim Laden des FBX:", error);
+            console.error("Fehler beim Laden des GLB:", error);
             loadingText.textContent = "Fehler beim Laden des Modells.";
           }
         );
@@ -339,13 +339,6 @@
         root.position.y -= minY;
 
         scene.add(root);
-
-        // Optionale Debug-Marker, falls du willst:
-        // const markerGeo = new THREE.SphereGeometry(0.05, 16, 16);
-        // const markerMat = new THREE.MeshBasicMaterial({ color: 0xff0000 });
-        // const marker = new THREE.Mesh(markerGeo, markerMat);
-        // marker.position.set(0, 0, 0);
-        // scene.add(marker);
 
         goToSweetspot();
       }
@@ -412,7 +405,6 @@
           132.8253707911402,
           -897.8984202247887
         );
-
         controls.target.set(0, 1.2, 0);
         controls.update();
       }
@@ -794,7 +786,6 @@
 
       function animate() {
         requestAnimationFrame(animate);
-
         if (controls) controls.update();
         renderer.render(scene, camera);
       }
